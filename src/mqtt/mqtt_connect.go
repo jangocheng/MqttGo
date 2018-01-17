@@ -4,6 +4,7 @@ import (
     "fmt"
     "encoding/binary"
     "errors"
+    "bytes"
 )
 
 type MqttConnectCommand struct {
@@ -29,8 +30,32 @@ type MqttConnectPayload struct {
     password string
 }
 
-func (cmd *MqttConnectCommand) Process() error {
+func (cmd *MqttConnectCommand) ClientId() string {
+    return cmd.payload.clientId
+}
+
+func (cmd *MqttConnectCommand) Username() string {
+    return cmd.payload.username
+}
+
+func (cmd *MqttConnectCommand) CleanSession() bool {
+    if cmd.variableHeader.flags & 0x20 == 0x20 {
+        return true
+    } else {
+        return false
+    }
+}
+
+func (cmd *MqttConnectCommand) Process(c *Client) error {
     fmt.Println("Process MQTT connect command: username[", cmd.payload.username, "] password[", cmd.payload.password, "] clientId[", cmd.payload.clientId, "]")
+    
+    //add new client into ClientMap
+    ClientMapSingleton().saveNewClient(cmd.payload.clientId, c)
+    
+    //send back ConnAck command
+    ackCmd := NewMqttConnackCommand()
+    c.SendCommand(ackCmd)
+    
     return nil
 }
 
@@ -165,4 +190,8 @@ func (vh *MqttConnectVariableHeader) getPasswordFlag() bool {
     } else {
         return false
     }
+}
+
+func (cmd *MqttConnectCommand) Buffer(buf *bytes.Buffer) error {
+    return nil
 }

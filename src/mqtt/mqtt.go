@@ -1,13 +1,15 @@
 package mqtt
 
 import (
-    "errors"
     "fmt"
+    "bytes"
 )
 
 type MqttCommand interface {
     //GetFixedHeader() MqttFixedHeader
-    Process() error
+    Process(c *Client) error
+    Parse(buf []byte, fixedHeader *MqttFixedHeader) (restBuf []byte, err error)
+    Buffer(buf *bytes.Buffer) error
 }
 
 type MqttFixedHeader struct {
@@ -17,7 +19,7 @@ type MqttFixedHeader struct {
 
 func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error) {
     if len(buf) < 2 {
-        err = errors.New("Not a complete commmand")
+        err = &NotCompleteError{"not a complete fixed header"}
         return
     }
     
@@ -33,7 +35,7 @@ func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error
         multiplier *= 128
         
         if multiplier > 128*128*128 {
-            err = errors.New("remain length format error")
+            err = &ParseError{index, "remain length format error"}
             return
         }
         
@@ -42,7 +44,7 @@ func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error
         }
 
         if index >= len(buf) {
-            err = errors.New("Not a complete commmand")
+            err = &NotCompleteError{"Not a complete commmand"}
             return
         }
     }
@@ -81,4 +83,44 @@ func (fixedHeader *MqttFixedHeader) GetFlagRetain() bool {
 
 func (fixedHeader *MqttFixedHeader) GetRemainLength() int {
     return fixedHeader.remainLength
+}
+
+func (fixedHeader *MqttFixedHeader) Buffer(buf *bytes.Buffer) error {
+    buf.WriteByte(fixedHeader.flag)
+    
+    //remain length
+    remainLength := fixedHeader.remainLength
+    for {
+        var encodedByte byte = byte(remainLength % 128)
+        remainLength /= 128
+        
+        if remainLength > 0 {
+            encodedByte |= 0x80
+        }
+        
+        buf.WriteByte(encodedByte)
+        
+        if remainLength <= 0 {
+            break
+        }
+    }
+    
+    return nil
+}
+
+type ParseError struct {
+    Index int
+    Word string
+}
+
+func (e *ParseError) Error() string {
+    return fmt.Sprintf("pkg parse:", e.Word, "at", e.Index)
+}
+
+type NotCompleteError struct {
+    Word string
+}
+
+func (e *NotCompleteError) Error() string {
+    return fmt.Sprintf("Not a complete command")
 }

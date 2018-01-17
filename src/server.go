@@ -56,7 +56,8 @@ func doServerStuff(conn net.Conn) {
                 fmt.Println("Error parse", err.Error())
                 return // terminate program
             }
-            cmd.Process()
+            client := mqtt.NewClient(cmd.ClientId(), cmd.Username(), cmd.CleanSession(), conn)
+            cmd.Process(client)
         default:
             fmt.Println("Error command type", fixedHeader.GetPacketType())
             return
