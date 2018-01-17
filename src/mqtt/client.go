@@ -11,11 +11,10 @@ type Client struct {
     status int "Current status of this client, such as INIT, HANDSHAKED"
     
     inputBuf []byte "input data buffer"
-    outputBuf []byte "output data buffer"
+    outputChannel chan []byte
     
     //command queue
-    cmdQueue *[64]MqttCommand
-    cmdQueueIndex int
+    cmdChannel chan MqttCommand
     
     clientId string
     username string
@@ -26,14 +25,17 @@ type Client struct {
 }
 
 func NewClient(clientId string, username string, cleanSession bool, conn net.Conn) *Client {
-    return &Client{0, make([]byte, 1024), make([]byte, 0), new([64]MqttCommand), 0, clientId, username, cleanSession, conn}
+    c := &Client{0, make([]byte, 0), make(chan []byte, 16), make(chan MqttCommand, 16), clientId, username, cleanSession, conn}
+    go c.ProcessInputCommand()
+    go c.doWrite()
+    return c
 }
 
-func (c *Client) GetClientId() string {
+func (c *Client) ClientId() string {
     return c.clientId
 }
 
-func (c *Client) GetUsername() string {
+func (c *Client) Username() string {
     return c.username
 }
 
@@ -44,37 +46,94 @@ func (c *Client) SendCommand(cmd MqttCommand) error {
         return err
     }
     
-    temp := buf.Bytes()
-    c.outputBuf = append(c.outputBuf, temp...)
-
-    c.Send()
+    c.outputChannel <- buf.Bytes()
     
     return nil
 }
 
-func (c *Client) Send() {
-    n, err := c.conn.Write(c.outputBuf)
-    if err != nil {
-        fmt.Println("Send command failed, err=", err)
-        c.Close()
-        return
-    }
-    fmt.Println("Send command to client, n=", n, "length=", len(c.outputBuf))
-
-    if n < len(c.outputBuf) {
-        //there are still some data need to send
-        c.outputBuf = c.outputBuf[n:]
+func (c *Client) doRead() {
+    for {
+        buf := make([]byte, 1024)
+        n, err := c.conn.Read(buf)
+        if err != nil {
+            fmt.Println("Client[", c.ClientId(), "] Read error:", err.Error())
+            c.conn.Close()
+            return
+        }
+        c.inputBuf = append(c.inputBuf, buf[:n]...)
         
-        go c.Send()
-    } else {
-        //all data send successfully
-        c.outputBuf = make([]byte, 0)
+        LOOP:
+        for len(c.inputBuf) > 0 {
+            fixedHeader := new(MqttFixedHeader)
+            restBuf, err := fixedHeader.Parse(c.inputBuf)
+            switch err.(type) {
+            case *NotCompleteError:
+                fmt.Println("Not complete command, need to read again")
+            case *ParseError:
+                fmt.Println("Client[", c.ClientId(), "] input fixedHeader format error:", err)
+                c.Close()
+                return
+            }
+            
+            if fixedHeader.GetPacketType() == 8 {
+                //subscribe command
+                cmd := new(MqttSubscribeCommand)
+                tempBuf, err := cmd.Parse(restBuf, fixedHeader)
+                switch err.(type) {
+                case *NotCompleteError:
+                    fmt.Println("Not complete command, need to read again")
+                    break LOOP
+                case *ParseError:
+                    fmt.Println("Client[", c.ClientId(), "] input format error:", err)
+                    c.Close()
+                    return
+                }
+                c.inputBuf = tempBuf
+                
+                c.cmdChannel <- cmd
+            } else {
+                fmt.Println("Error command type", fixedHeader.GetPacketType())
+                return
+            }
+        }
+    }
+}
+
+func (c *Client) doWrite() {
+    var buf []byte
+    for {
+        buf =<- c.outputChannel
+        
+        for {
+            n, err := c.conn.Write(buf)
+            if err != nil {
+                fmt.Println("Send command failed, err=", err)
+                c.Close()
+                return
+            }
+            fmt.Println("Send command to client, n=", n, "length=", len(buf))
+
+            if n < len(buf) {
+                //there are still some data need to send
+                buf = buf[n:]
+            } else {
+                break
+            }
+        }
+    }
+}
+
+func (c *Client) ProcessInputCommand() {
+    var cmd MqttCommand
+    for {
+        cmd =<- c.cmdChannel
+        cmd.Process(c)
     }
 }
 
 func (c *Client) Close() {
     c.conn.Close()
-    ClientMapSingleton().removeClient(c.GetClientId())
+    ClientMapSingleton().removeClient(c.ClientId())
 }
 
 var clients *ClientMap

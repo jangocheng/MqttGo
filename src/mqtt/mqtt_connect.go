@@ -56,6 +56,9 @@ func (cmd *MqttConnectCommand) Process(c *Client) error {
     ackCmd := NewMqttConnackCommand()
     c.SendCommand(ackCmd)
     
+    //go on read input command
+    go c.doRead()
+    
     return nil
 }
 

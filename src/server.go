@@ -22,11 +22,11 @@ func main() {
             fmt.Println("Error accepting", err.Error())
             return // terminate program
         }
-        go doServerStuff(conn)
+        go doNewClient(conn)
     }
 }
 
-func doServerStuff(conn net.Conn) {
+func doNewClient(conn net.Conn) {
     for {
         var err error
         var size int
@@ -34,6 +34,7 @@ func doServerStuff(conn net.Conn) {
         size, err = conn.Read(buf)
         if err != nil {
             fmt.Println("Error reading", err.Error())
+            conn.Close()
             return // terminate program
         }
         
@@ -43,11 +44,11 @@ func doServerStuff(conn net.Conn) {
         restBuf, err = fixedHeader.Parse(buf[:size])
         if err != nil {
             fmt.Println("Error parse", err.Error())
+            conn.Close()
             return // terminate program
         }
         
-        switch fixedHeader.GetPacketType() {
-        case 1:
+        if fixedHeader.GetPacketType() == 1 {
             //connect command
             cmd := new(mqtt.MqttConnectCommand)
             //var restBuf1 []byte
@@ -58,9 +59,12 @@ func doServerStuff(conn net.Conn) {
             }
             client := mqtt.NewClient(cmd.ClientId(), cmd.Username(), cmd.CleanSession(), conn)
             cmd.Process(client)
-        default:
+            fmt.Println("go here")
+            break
+        } else {
             fmt.Println("Error command type", fixedHeader.GetPacketType())
             return
         }
     }
+    fmt.Println("exit doNewClient")
 }
