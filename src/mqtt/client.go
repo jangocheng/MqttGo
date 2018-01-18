@@ -75,7 +75,8 @@ func (c *Client) doRead() {
                 return
             }
             
-            if fixedHeader.GetPacketType() == 8 {
+            switch fixedHeader.GetPacketType() {
+            case 8:
                 //subscribe command
                 cmd := new(MqttSubscribeCommand)
                 tempBuf, err := cmd.Parse(restBuf, fixedHeader)
@@ -91,7 +92,12 @@ func (c *Client) doRead() {
                 c.inputBuf = tempBuf
                 
                 c.cmdChannel <- cmd
-            } else {
+            case 12:
+                cmd := new(MqttPingReqCommand)
+                cmd.fixedHeader = *fixedHeader
+                c.inputBuf = restBuf
+                c.cmdChannel <- cmd
+            default:
                 fmt.Println("Error command type", fixedHeader.GetPacketType())
                 return
             }

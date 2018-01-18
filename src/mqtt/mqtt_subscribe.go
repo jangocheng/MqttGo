@@ -10,7 +10,7 @@ func NewMqttSubscribeCommand() *MqttSubscribeCommand {
     return &MqttSubscribeCommand{
         fixedHeader : MqttFixedHeader{0x20, 0x02}, 
         variableHeader : MqttSubscribeVariableHeader{0},
-        payload : MqttSubscribePayload{make([]*MqttSubscribePacket, 16)},
+        payload : MqttSubscribePayload{make([]*MqttSubscribePacket, 0)},
     }
 }
 
@@ -35,6 +35,16 @@ type MqttSubscribePacket struct {
 
 func (cmd *MqttSubscribeCommand) Process(c *Client) error {
     fmt.Println("Process MQTT subscribe command")
+    SubscribeInfoSingleton().saveNewSubscribe(c, cmd.payload.packets)
+    
+    //send back Suback command
+    ackCmd := NewMqttSubackCommand()
+    ackCmd.SetPacketId(cmd.variableHeader.packetId)
+    ackCmd.SetReturnCodesLength(len(cmd.payload.packets))
+    for index, value := range cmd.payload.packets {
+        ackCmd.SetReturnCodes(index, byte(value.qos))
+    }
+    c.SendCommand(ackCmd)
     return nil
 }
 

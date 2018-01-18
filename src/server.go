@@ -59,12 +59,10 @@ func doNewClient(conn net.Conn) {
             }
             client := mqtt.NewClient(cmd.ClientId(), cmd.Username(), cmd.CleanSession(), conn)
             cmd.Process(client)
-            fmt.Println("go here")
             break
         } else {
             fmt.Println("Error command type", fixedHeader.GetPacketType())
             return
         }
     }
-    fmt.Println("exit doNewClient")
 }
