@@ -68,6 +68,12 @@ func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
     //TODO: mutex
     index := 0
     l := m.subscribeMap[topic]
+    
+    if l == nil {
+        //there is no client subscribed that topic
+        return nil
+    }
+    
     var pairs []SubscribePair = make([]SubscribePair, l.Len())
     for e := l.Front(); e != nil; e = e.Next() {
         switch v := e.Value.(type) {

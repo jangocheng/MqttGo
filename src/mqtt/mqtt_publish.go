@@ -53,6 +53,11 @@ func (cmd *MqttPublishCommand) Process(c *Client) error {
     fmt.Println("Process MQTT publish command: topic[", cmd.variableHeader.topic, "] qos[", cmd.fixedHeader.FlagQos, "]")
     
     var clients []SubscribePair = SubscribeInfoSingleton().getSubscribedClients(cmd.variableHeader.topic)
+    if clients == nil {
+        return cmd.sendPubAck(c)
+    }
+    
+    flag := false
     for _, client := range clients {
         //check qos
         qos := client.qos
@@ -70,10 +75,29 @@ func (cmd *MqttPublishCommand) Process(c *Client) error {
         
         publishCmd.payload.msg = cmd.payload.msg
         
+        if client.c == c {
+            //the client sent Publish command still subscribe that topic, should send Puback command first
+            cmd.sendPubAck(c)
+            flag = true
+        }
         client.c.SendCommand(publishCmd)
     }
     
+    if !flag {
+        cmd.sendPubAck(c)
+    }
+    
     return nil
+}
+
+func (cmd *MqttPublishCommand) sendPubAck(c *Client) error {
+    var err error
+    if cmd.fixedHeader.FlagQos() > 0 {
+        ackCmd := NewMqttPubackCommand()
+        ackCmd.SetPacketId(cmd.variableHeader.packetId)
+        err = c.SendCommand(ackCmd)
+    }
+    return err
 }
 
 func (cmd *MqttPublishCommand) Parse(buf []byte, fixedHeader *MqttFixedHeader) (restBuf []byte, err error) {
