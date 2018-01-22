@@ -5,6 +5,24 @@ import (
     "bytes"
 )
 
+const (
+    _ = iota
+    MQTT_CMD_CONNECT
+    MQTT_CMD_CONNACK
+    MQTT_CMD_PUBLISH
+    MQTT_CMD_PUBACK
+    MQTT_CMD_PUBREC
+    MQTT_CMD_PUBREL
+    MQTT_CMD_PUBCOMP
+    MQTT_CMD_SUBSCRIBE
+    MQTT_CMD_SUBACK
+    MQTT_CMD_UNSUBSCRIBE
+    MQTT_CMD_UNSUBACK
+    MQTT_CMD_PINGREQ
+    MQTT_CMD_PINGRESP
+    MQTT_CMD_DISCONNECT
+)
+
 type MqttCommand interface {
     //GetFixedHeader() MqttFixedHeader
     Process(c *Client) error
@@ -53,15 +71,15 @@ func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error
     fixedHeader.remainLength = value
     
     restBuf = buf[index:]
-    fmt.Println("Type:", fixedHeader.GetPacketType(), ", remainlength:", fixedHeader.GetRemainLength(), ", index:", index)
+    fmt.Println("Type:", fixedHeader.PacketType(), ", remainlength:", fixedHeader.RemainLength(), ", index:", index)
     return
 }
 
-func (fixedHeader *MqttFixedHeader) GetPacketType() int {
+func (fixedHeader *MqttFixedHeader) PacketType() int {
     return int(fixedHeader.flag >> 4)
 }
 
-func (fixedHeader *MqttFixedHeader) GetFlagDup() bool {
+func (fixedHeader *MqttFixedHeader) FlagDup() bool {
     if fixedHeader.flag & 0x08 == 0x08 {
         return true
     } else {
@@ -69,11 +87,26 @@ func (fixedHeader *MqttFixedHeader) GetFlagDup() bool {
     }
 }
 
-func (fixedHeader *MqttFixedHeader) GetFlagQos() int {
+func (fixedHeader *MqttFixedHeader) SetFlagDup(dup bool) {
+    if dup {
+        fixedHeader.flag |= 0x08
+    } else {
+        fixedHeader.flag &^= 0x08
+    }
+}
+
+func (fixedHeader *MqttFixedHeader) FlagQos() int {
     return int((fixedHeader.flag & 0x06) >> 1)
 }
 
-func (fixedHeader *MqttFixedHeader) GetFlagRetain() bool {
+func (fixedHeader *MqttFixedHeader) SetFlagQos(qos int) {
+    v := byte(qos)
+    v <<= 1
+    fixedHeader.flag &^= 0x06
+    fixedHeader.flag |= v
+}
+
+func (fixedHeader *MqttFixedHeader) FlagRetain() bool {
     if fixedHeader.flag & 0x01 == 0x01 {
         return true
     } else {
@@ -81,7 +114,15 @@ func (fixedHeader *MqttFixedHeader) GetFlagRetain() bool {
     }
 }
 
-func (fixedHeader *MqttFixedHeader) GetRemainLength() int {
+func (fixedHeader *MqttFixedHeader) SetFlagRetain(retain bool) {
+    if retain {
+        fixedHeader.flag |= 0x01
+    } else {
+        fixedHeader.flag &^= 0x01
+    }
+}
+
+func (fixedHeader *MqttFixedHeader) RemainLength() int {
     return fixedHeader.remainLength
 }
 

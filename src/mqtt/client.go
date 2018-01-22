@@ -75,8 +75,8 @@ func (c *Client) doRead() {
                 return
             }
             
-            switch fixedHeader.GetPacketType() {
-            case 8:
+            switch fixedHeader.PacketType() {
+            case MQTT_CMD_SUBSCRIBE:
                 //subscribe command
                 cmd := new(MqttSubscribeCommand)
                 tempBuf, err := cmd.Parse(restBuf, fixedHeader)
@@ -92,13 +92,28 @@ func (c *Client) doRead() {
                 c.inputBuf = tempBuf
                 
                 c.cmdChannel <- cmd
-            case 12:
+            case MQTT_CMD_PINGREQ:
                 cmd := new(MqttPingReqCommand)
                 cmd.fixedHeader = *fixedHeader
                 c.inputBuf = restBuf
                 c.cmdChannel <- cmd
+            case MQTT_CMD_PUBLISH:
+                cmd := NewMqttPublishCommand()
+                tempBuf, err := cmd.Parse(restBuf, fixedHeader)
+                switch err.(type) {
+                case *NotCompleteError:
+                    fmt.Println("Not complete command, need to read again")
+                    break LOOP
+                case *ParseError:
+                    fmt.Println("Client[", c.ClientId(), "] input format error:", err)
+                    c.Close()
+                    return
+                }
+                c.inputBuf = tempBuf
+                
+                c.cmdChannel <- cmd
             default:
-                fmt.Println("Error command type", fixedHeader.GetPacketType())
+                fmt.Println("Error command type", fixedHeader.PacketType())
                 return
             }
         }

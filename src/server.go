@@ -48,7 +48,7 @@ func doNewClient(conn net.Conn) {
             return // terminate program
         }
         
-        if fixedHeader.GetPacketType() == 1 {
+        if fixedHeader.PacketType() == 1 {
             //connect command
             cmd := new(mqtt.MqttConnectCommand)
             //var restBuf1 []byte
@@ -61,7 +61,7 @@ func doNewClient(conn net.Conn) {
             cmd.Process(client)
             break
         } else {
-            fmt.Println("Error command type", fixedHeader.GetPacketType())
+            fmt.Println("Error command type", fixedHeader.PacketType())
             return
         }
     }
