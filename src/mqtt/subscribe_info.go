@@ -24,11 +24,13 @@ type SubscribePair struct {
 }
 
 type subscribeInfo struct {
+    mutex sync.Mutex
     subscribeMap map[string]*list.List
 }
 
 func (m *subscribeInfo) saveNewSubscribe(c *Client, info []*MqttSubscribePacket) {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     for _, value := range info {
         if pairs, ok := m.subscribeMap[value.topic]; ok {
             var flag bool = false
@@ -65,7 +67,8 @@ func (m *subscribeInfo) saveNewSubscribe(c *Client, info []*MqttSubscribePacket)
 }
 
 func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     index := 0
     l := m.subscribeMap[topic]
     
@@ -88,7 +91,8 @@ func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
 }
 
 func (m *subscribeInfo) removeSubscribe(c *Client, info []*MqttSubscribePacket) {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     for _, value := range info {
         if pairs, ok := m.subscribeMap[value.topic]; ok {
             var flag bool = false

@@ -170,11 +170,13 @@ func ClientMapSingleton() *ClientMap {
 
 
 type ClientMap struct {
+    mutex sync.Mutex
     clientMap map[string]*Client
 }
 
 func (m *ClientMap) getClient(clientId string) *Client {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     if c, ok := m.clientMap[clientId]; ok {
         return c
     } else {
@@ -183,11 +185,13 @@ func (m *ClientMap) getClient(clientId string) *Client {
 }
 
 func (m *ClientMap) saveNewClient(clientId string, c *Client) {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     m.clientMap[clientId] = c
 }
 
 func (m *ClientMap) removeClient(clientId string) {
-    //TODO: mutex
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
     delete(m.clientMap, clientId)
 }
