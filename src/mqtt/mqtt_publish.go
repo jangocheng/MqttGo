@@ -50,7 +50,7 @@ func (vh *MqttPublishVariableHeader) SetPacketId(packetId int) {
 }
 
 func (cmd *MqttPublishCommand) Process(c *Client) error {
-    fmt.Println("Process MQTT publish command: topic[", cmd.variableHeader.topic, "] qos[", cmd.fixedHeader.FlagQos, "]")
+    fmt.Println("Process MQTT publish command: topic[", cmd.variableHeader.topic, "] qos[", cmd.fixedHeader.FlagQos(), "]")
     
     var clients []SubscribePair = SubscribeInfoSingleton().getSubscribedClients(cmd.variableHeader.topic)
     if clients == nil {
