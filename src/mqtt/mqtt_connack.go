@@ -5,6 +5,15 @@ import (
     "bytes"
 )
 
+const (
+    MQTT_CONNACK_ACCEPTED = iota
+    MQTT_CONNACK_WRONG_PROTOCOL_VERSION
+    MQTT_CONNACK_ID_REJECTED
+    MQTT_CONNACK_SERVER_UNAVAILABLE
+    MQTT_CONNACK_BAD_USERNAME_PASSWD
+    MQTT_CONNACK_NOT_AUTHORIZED
+)
+
 func NewMqttConnackCommand() *MqttConnackCommand {
     return &MqttConnackCommand{
         fixedHeader : MqttFixedHeader{0x20, 0x02}, 

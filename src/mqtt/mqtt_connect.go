@@ -5,6 +5,8 @@ import (
     "encoding/binary"
     "errors"
     "bytes"
+    "persistence"
+    "time"
 )
 
 type MqttConnectCommand struct {
@@ -49,11 +51,47 @@ func (cmd *MqttConnectCommand) CleanSession() bool {
 func (cmd *MqttConnectCommand) Process(c *Client) error {
     fmt.Println("Process MQTT connect command: username[", cmd.payload.username, "] password[", cmd.payload.password, "] clientId[", cmd.payload.clientId, "]")
     
+    ackCmd := NewMqttConnackCommand()
+    
     //add new client into ClientMap
     ClientMapSingleton().saveNewClient(cmd.payload.clientId, c)
     
+    id, err := persistence.SaveClientConnection(cmd.payload.clientId, "nodeId1", time.Now())
+    if err != nil {
+        fmt.Println("call SaveClientConnection error:", err)
+        ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
+        c.SendCommand(ackCmd)
+        return err
+    } else {
+        fmt.Println("call SaveClientConnection insert id:", id)
+    }
+    
+    //check if this client is clean session
+    if c.CleanSession() {
+        //this client is clean session, remove all session info
+        allSubscribeInfo, err := persistence.RemoveAllSubscribe(cmd.payload.clientId)
+        if err != nil {
+            fmt.Println("MqttConnectCommand RemoveAllSubscribe failed:", err)
+            ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
+            c.SendCommand(ackCmd)
+            return err
+        } else {
+            SubscribeInfoSingleton().removeSubscribe(c, allSubscribeInfo)
+        }
+    } else {
+        //this client is not clean session, load all session info from db
+        allSubscribeInfo, err := persistence.GetAllSubscribe(cmd.payload.clientId)
+        if err != nil {
+            fmt.Println("MqttConnectCommand GetAllSubscribe failed:", err)
+            ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
+            c.SendCommand(ackCmd)
+            return err
+        } else {
+            SubscribeInfoSingleton().saveNewSubscribe(c, allSubscribeInfo)
+        }
+    }
+    
     //send back ConnAck command
-    ackCmd := NewMqttConnackCommand()
     c.SendCommand(ackCmd)
     
     //go on read input command

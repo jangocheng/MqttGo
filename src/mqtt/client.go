@@ -39,6 +39,10 @@ func (c *Client) Username() string {
     return c.username
 }
 
+func (c *Client) CleanSession() bool {
+    return c.cleanSession
+}
+
 func (c *Client) SendCommand(cmd MqttCommand) error {
     buf := new(bytes.Buffer)
     err := cmd.Buffer(buf)

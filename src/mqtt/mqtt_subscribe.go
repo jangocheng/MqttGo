@@ -4,6 +4,8 @@ import (
     "fmt"
     "bytes"
     "encoding/binary"
+    "persistence"
+    . "mqtttype"
 )
 
 func NewMqttSubscribeCommand() *MqttSubscribeCommand {
@@ -28,21 +30,25 @@ type MqttSubscribePayload struct {
     packets []*MqttSubscribePacket
 }
 
-type MqttSubscribePacket struct {
-    topic string
-    qos int
-}
-
 func (cmd *MqttSubscribeCommand) Process(c *Client) error {
     fmt.Println("Process MQTT subscribe command")
     SubscribeInfoSingleton().saveNewSubscribe(c, cmd.payload.packets)
     
+    if !c.CleanSession() {
+        //save into persistence
+        err := persistence.SaveClientSubscribe(c.ClientId(), cmd.payload.packets)
+        if err != nil {
+            fmt.Println("call SaveClientSubscribe error:", err)
+            return err
+        }
+    }
+
     //send back Suback command
     ackCmd := NewMqttSubackCommand()
     ackCmd.SetPacketId(cmd.variableHeader.packetId)
     ackCmd.SetReturnCodesLength(len(cmd.payload.packets))
     for index, value := range cmd.payload.packets {
-        ackCmd.SetReturnCodes(index, byte(value.qos))
+        ackCmd.SetReturnCodes(index, byte(value.Qos))
     }
     c.SendCommand(ackCmd)
     return nil
@@ -90,16 +96,16 @@ func (cmd *MqttSubscribeCommand) parsePayload(buf []byte) (restBuf []byte, err e
             return
         }
         
-        p.topic = string(buf[index+2:index+2+topicLength])
+        p.Topic = string(buf[index+2:index+2+topicLength])
         index += 2+topicLength
-        fmt.Println("Subscribe command topic:", p.topic, ", index:",index,",length:",len(buf))
+        fmt.Println("Subscribe command topic:", p.Topic, ", index:",index,",length:",len(buf))
         
         if index+1 > len(buf) {
             err = &ParseError{index, "there is no qos field"}
             return
         }
-        p.qos = int(buf[index])
-        fmt.Println("Subscribe command qos:", p.qos)
+        p.Qos = int(buf[index])
+        fmt.Println("Subscribe command qos:", p.Qos)
         
         index++
         
