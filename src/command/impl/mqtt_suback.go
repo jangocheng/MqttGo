@@ -1,13 +1,16 @@
-package mqtt
+package impl
 
 import (
     "bytes"
     "encoding/binary"
+    
+    . "command"
+    . "client"
 )
 
 func NewMqttSubackCommand() *MqttSubackCommand {
     return &MqttSubackCommand{
-        fixedHeader : MqttFixedHeader{0x90, 0x00}, 
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_SUBACK<<4, 0x00), 
         variableHeader : MqttSubackVariableHeader{0},
         payload : MqttSubackPayload{nil},
     }
@@ -27,7 +30,7 @@ type MqttSubackPayload struct {
     returnCodes []byte
 }
 
-func (cmd *MqttSubackCommand) Process(c *Client) error {
+func (cmd *MqttSubackCommand) Process(c Client) error {
     return nil
 }
 
@@ -38,7 +41,7 @@ func (cmd *MqttSubackCommand) Parse(buf []byte, fixedHeader *MqttFixedHeader) (r
 func (cmd *MqttSubackCommand) Buffer(buf *bytes.Buffer) error {
     remainLength := 2 //packet id length
     remainLength += len(cmd.payload.returnCodes)
-    cmd.fixedHeader.remainLength = remainLength
+    cmd.fixedHeader.SetRemainLength(remainLength)
 
     err := cmd.fixedHeader.Buffer(buf)
     if err != nil {

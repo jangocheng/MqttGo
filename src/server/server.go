@@ -1,17 +1,19 @@
-package main
+package server
 
 import (
-    "fmt"
     "net"
-    "./mqtt"
+    
+    client_impl "client/impl"
+    command_impl "command/impl"
+    . "command"
+    . "zjlog"
 )
 
-func main() {
-    fmt.Println("Starting the server ...")
+func StartServer() {
     // create listener:
-    listener, err := net.Listen("tcp", "localhost:50000")
+    listener, err := net.Listen("tcp", ":50000")
     if err != nil {
-        fmt.Println("Error listening", err.Error())
+        Log().Error("Error listening", err.Error())
         return // terminate program
     }
     // listen and accept connections from clients:
@@ -19,7 +21,7 @@ func main() {
         conn, err := listener.Accept()
 
         if err != nil {
-            fmt.Println("Error accepting", err.Error())
+            Log().Error("Error accepting", err.Error())
             return // terminate program
         }
         go doNewClient(conn)
@@ -33,35 +35,35 @@ func doNewClient(conn net.Conn) {
         buf := make([]byte, 512)
         size, err = conn.Read(buf)
         if err != nil {
-            fmt.Println("Error reading", err.Error())
+            Log().Error("Error reading", err.Error())
             conn.Close()
             return // terminate program
         }
         
         //parse input data
         var restBuf []byte
-        fixedHeader := new(mqtt.MqttFixedHeader)
+        fixedHeader := new(MqttFixedHeader)
         restBuf, err = fixedHeader.Parse(buf[:size])
         if err != nil {
-            fmt.Println("Error parse", err.Error())
+            Log().Error("Error parse", err.Error())
             conn.Close()
             return // terminate program
         }
         
         if fixedHeader.PacketType() == 1 {
             //connect command
-            cmd := new(mqtt.MqttConnectCommand)
+            cmd := new(command_impl.MqttConnectCommand)
             //var restBuf1 []byte
             _, err = cmd.Parse(restBuf, fixedHeader)
             if err != nil {
-                fmt.Println("Error parse", err.Error())
+                Log().Error("Error parse", err.Error())
                 return // terminate program
             }
-            client := mqtt.NewClient(cmd.ClientId(), cmd.Username(), cmd.CleanSession(), conn)
+            client := client_impl.NewClient(cmd.ClientId(), cmd.Username(), cmd.CleanSession(), conn)
             cmd.Process(client)
             break
         } else {
-            fmt.Println("Error command type", fixedHeader.PacketType())
+            Log().Error("Error command type", fixedHeader.PacketType())
             return
         }
     }

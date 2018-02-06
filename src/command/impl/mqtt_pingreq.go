@@ -1,14 +1,17 @@
-package mqtt
+package impl
 
 import (
     "bytes"
+    
+    . "command"
+    . "client"
 )
 
 type MqttPingReqCommand struct {
     fixedHeader MqttFixedHeader
 }
 
-func (cmd *MqttPingReqCommand) Process(c *Client) error {
+func (cmd *MqttPingReqCommand) Process(c Client) error {
     ackCmd := NewMqttPingRespCommand()
     c.SendCommand(ackCmd)
     return nil

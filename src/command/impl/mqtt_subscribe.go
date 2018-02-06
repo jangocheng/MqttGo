@@ -1,16 +1,19 @@
-package mqtt
+package impl
 
 import (
-    "fmt"
+    "log"
     "bytes"
     "encoding/binary"
+    
     "persistence"
-    . "mqtttype"
+    . "subinfo"
+    . "command"
+    . "client"
 )
 
 func NewMqttSubscribeCommand() *MqttSubscribeCommand {
     return &MqttSubscribeCommand{
-        fixedHeader : MqttFixedHeader{0x20, 0x02}, 
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_SUBSCRIBE<<4, 0x02), 
         variableHeader : MqttSubscribeVariableHeader{0},
         payload : MqttSubscribePayload{make([]*MqttSubscribePacket, 0)},
     }
@@ -30,15 +33,15 @@ type MqttSubscribePayload struct {
     packets []*MqttSubscribePacket
 }
 
-func (cmd *MqttSubscribeCommand) Process(c *Client) error {
-    fmt.Println("Process MQTT subscribe command")
-    SubscribeInfoSingleton().saveNewSubscribe(c, cmd.payload.packets)
+func (cmd *MqttSubscribeCommand) Process(c Client) error {
+    log.Print("Process MQTT subscribe command")
+    SubscribeInfoSingleton().SaveNewSubscribe(c, cmd.payload.packets)
     
     if !c.CleanSession() {
         //save into persistence
         err := persistence.SaveClientSubscribe(c.ClientId(), cmd.payload.packets)
         if err != nil {
-            fmt.Println("call SaveClientSubscribe error:", err)
+            log.Print("call SaveClientSubscribe error:", err)
             return err
         }
     }
@@ -56,7 +59,7 @@ func (cmd *MqttSubscribeCommand) Process(c *Client) error {
 
 func (cmd *MqttSubscribeCommand) Parse(buf []byte, fixedHeader *MqttFixedHeader) (restBuf []byte, err error) {
     //check the length
-    if fixedHeader.remainLength > len(buf) {
+    if fixedHeader.RemainLength() > len(buf) {
         //there is not enough data
         err = &NotCompleteError{"Not a complete subscribe command"}
         return
@@ -78,7 +81,7 @@ func (cmd *MqttSubscribeCommand) Parse(buf []byte, fixedHeader *MqttFixedHeader)
 
 func (cmd *MqttSubscribeCommand) parseVariableHeader(buf []byte) (restBuf []byte, err error) {
     cmd.variableHeader.packetId = int(binary.BigEndian.Uint16(buf[0:2]))
-    fmt.Println("Subscribe command packetId:", cmd.variableHeader.packetId)
+    log.Print("Subscribe command packetId:", cmd.variableHeader.packetId)
 
     restBuf = buf[2:]
     return
@@ -98,14 +101,14 @@ func (cmd *MqttSubscribeCommand) parsePayload(buf []byte) (restBuf []byte, err e
         
         p.Topic = string(buf[index+2:index+2+topicLength])
         index += 2+topicLength
-        fmt.Println("Subscribe command topic:", p.Topic, ", index:",index,",length:",len(buf))
+        log.Print("Subscribe command topic:", p.Topic, ", index:",index,",length:",len(buf))
         
         if index+1 > len(buf) {
             err = &ParseError{index, "there is no qos field"}
             return
         }
         p.Qos = int(buf[index])
-        fmt.Println("Subscribe command qos:", p.Qos)
+        log.Print("Subscribe command qos:", p.Qos)
         
         index++
         

@@ -1,8 +1,11 @@
-package mqtt
+package impl
 
 import (
-    "fmt"
+    "log"
     "bytes"
+    
+    . "command"
+    . "client"
 )
 
 const (
@@ -16,7 +19,7 @@ const (
 
 func NewMqttConnackCommand() *MqttConnackCommand {
     return &MqttConnackCommand{
-        fixedHeader : MqttFixedHeader{0x20, 0x02}, 
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_CONNACK<<4, 0x02),
         variableHeader : MqttConnackVariableHeader{true, 0x00},
     }
 }
@@ -31,8 +34,8 @@ type MqttConnackVariableHeader struct {
     returnCode byte
 }
 
-func (cmd *MqttConnackCommand) Process(c *Client) error {
-    fmt.Println("Process MQTT connack command: returnCode[", cmd.variableHeader.returnCode, "]")
+func (cmd *MqttConnackCommand) Process(c Client) error {
+    log.Print("Process MQTT connack command: returnCode[", cmd.variableHeader.returnCode, "]")
     return nil
 }
 

@@ -1,12 +1,16 @@
-package mqtt
+package impl
 
 import (
-    "fmt"
     "encoding/binary"
     "errors"
     "bytes"
-    "persistence"
     "time"
+    "log"
+    
+    . "command"
+    . "subinfo"
+    . "client"
+    "persistence"
 )
 
 type MqttConnectCommand struct {
@@ -48,46 +52,75 @@ func (cmd *MqttConnectCommand) CleanSession() bool {
     }
 }
 
-func (cmd *MqttConnectCommand) Process(c *Client) error {
-    fmt.Println("Process MQTT connect command: username[", cmd.payload.username, "] password[", cmd.payload.password, "] clientId[", cmd.payload.clientId, "]")
+func (cmd *MqttConnectCommand) Process(c Client) error {
+    log.Print("Process MQTT connect command: username[", cmd.payload.username, "] password[", cmd.payload.password, "] clientId[", cmd.payload.clientId, "]")
     
     ackCmd := NewMqttConnackCommand()
     
     //add new client into ClientMap
-    ClientMapSingleton().saveNewClient(cmd.payload.clientId, c)
+    ClientMapSingleton().SaveNewClient(cmd.payload.clientId, c)
     
     id, err := persistence.SaveClientConnection(cmd.payload.clientId, "nodeId1", time.Now())
     if err != nil {
-        fmt.Println("call SaveClientConnection error:", err)
+        log.Print("call SaveClientConnection error:", err)
         ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
         c.SendCommand(ackCmd)
         return err
     } else {
-        fmt.Println("call SaveClientConnection insert id:", id)
+        log.Print("call SaveClientConnection insert id:", id)
     }
     
     //check if this client is clean session
     if c.CleanSession() {
         //this client is clean session, remove all session info
-        allSubscribeInfo, err := persistence.RemoveAllSubscribe(cmd.payload.clientId)
+        topics, err := persistence.RemoveAllSubscribe(cmd.payload.clientId)
         if err != nil {
-            fmt.Println("MqttConnectCommand RemoveAllSubscribe failed:", err)
+            log.Print("MqttConnectCommand RemoveAllSubscribe failed:", err)
             ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
             c.SendCommand(ackCmd)
             return err
         } else {
-            SubscribeInfoSingleton().removeSubscribe(c, allSubscribeInfo)
+            SubscribeInfoSingleton().RemoveSubscribe(c, topics)
         }
     } else {
         //this client is not clean session, load all session info from db
         allSubscribeInfo, err := persistence.GetAllSubscribe(cmd.payload.clientId)
         if err != nil {
-            fmt.Println("MqttConnectCommand GetAllSubscribe failed:", err)
+            log.Print("MqttConnectCommand GetAllSubscribe failed:", err)
             ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
             c.SendCommand(ackCmd)
             return err
         } else {
-            SubscribeInfoSingleton().saveNewSubscribe(c, allSubscribeInfo)
+            SubscribeInfoSingleton().SaveNewSubscribe(c, allSubscribeInfo)
+        }
+        
+        //read all message
+        allMessage, err := persistence.GetClientMessage(cmd.payload.clientId)
+        if err != nil {
+            log.Print("MqttConnectCommand GetAllSubscribe failed:", err)
+            ackCmd.SetReturnCode(MQTT_CONNACK_SERVER_UNAVAILABLE)
+            c.SendCommand(ackCmd)
+            return err
+        } else {
+            for _, msg := range allMessage {
+                if msg.Topic == "" {
+                    continue
+                }
+            
+                publishCmd := NewMqttPublishCommand()
+                publishCmd.fixedHeader.SetFlagDup(true)
+                publishCmd.fixedHeader.SetFlagQos(msg.Qos)
+                publishCmd.fixedHeader.SetFlagRetain(false)
+                
+                publishCmd.variableHeader.SetTopic(msg.Topic)
+                packetId := c.NextPacketId()
+                publishCmd.variableHeader.SetPacketId(int(packetId))
+                c.SavePacketIdMapping(packetId, msg.Id)
+                
+                publishCmd.payload.msg = msg.Message
+
+                c.SendCommand(publishCmd)
+            }
         }
     }
     
@@ -95,7 +128,7 @@ func (cmd *MqttConnectCommand) Process(c *Client) error {
     c.SendCommand(ackCmd)
     
     //go on read input command
-    go c.doRead()
+    c.Read()
     
     return nil
 }
@@ -156,7 +189,7 @@ func (cmd *MqttConnectCommand) parseVariableHeader(buf []byte) (restBuf []byte, 
     index += 2
     
     restBuf = buf[index:]
-    fmt.Println("procotol name:", cmd.variableHeader.protocolName, ",keepAlive:", cmd.variableHeader.keepAlive)
+    log.Print("procotol name:", cmd.variableHeader.protocolName, ",keepAlive:", cmd.variableHeader.keepAlive)
     return
 }
 
@@ -168,7 +201,7 @@ func (cmd *MqttConnectCommand) parsePayload(buf []byte) (restBuf []byte, err err
     index += 2
     cmd.payload.clientId = string(buf[index: index+clientIdLength])
     index += clientIdLength
-    fmt.Println("ClientId length:", clientIdLength, ", ClientId:", cmd.payload.clientId)
+    log.Print("ClientId length:", clientIdLength, ", ClientId:", cmd.payload.clientId)
     
     //will topic
     if cmd.variableHeader.getWillFlag() {
@@ -192,7 +225,7 @@ func (cmd *MqttConnectCommand) parsePayload(buf []byte) (restBuf []byte, err err
         
         cmd.payload.username = string(buf[index: index+usernameLength])
         index += usernameLength
-        fmt.Println("username length:", usernameLength, ", username:", cmd.payload.username)
+        log.Print("username length:", usernameLength, ", username:", cmd.payload.username)
     }
     
     //password
@@ -202,7 +235,7 @@ func (cmd *MqttConnectCommand) parsePayload(buf []byte) (restBuf []byte, err err
         
         cmd.payload.password = string(buf[index: index+passwordLength])
         index += passwordLength
-        fmt.Println("password length:", passwordLength, ", password:", cmd.payload.password)
+        log.Print("password length:", passwordLength, ", password:", cmd.payload.password)
     }
     
     restBuf = buf[index:]

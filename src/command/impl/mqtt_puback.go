@@ -1,13 +1,18 @@
-package mqtt
+package impl
 
 import (
     "bytes"
     "encoding/binary"
+    "log"
+    
+    "persistence"
+    . "command"
+    . "client"
 )
 
 func NewMqttPubackCommand() *MqttPubackCommand {
     return &MqttPubackCommand{
-        fixedHeader : MqttFixedHeader{MQTT_CMD_PUBACK<<4, 0x00}, 
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_PUBACK<<4, 0), 
         variableHeader : MqttPubackVariableHeader{0},
     }
 }
@@ -21,8 +26,17 @@ type MqttPubackVariableHeader struct {
     packetId uint16
 }
 
-func (cmd *MqttPubackCommand) Process(c *Client) error {
-    //TODO: remove cache publish command
+func (cmd *MqttPubackCommand) Process(c Client) error {
+    log.Print("MqttPubackCommand ClientId[", c.ClientId(), "] PacketId[", cmd.variableHeader.packetId, "]")
+    if !c.CleanSession() {
+        msgId, err := c.RemovePacketIdMapping(cmd.variableHeader.packetId)
+        if err == nil {
+            err = persistence.RemoveClientMessage(c.ClientId(), msgId)
+            if err != nil {
+                log.Print("RemoveClientMessage failed, clientId[", c.ClientId(), "] msgId[", msgId, "] error:", err)
+            }
+        }
+    }
     return nil
 }
 
@@ -39,7 +53,7 @@ func (cmd *MqttPubackCommand) Parse(buf []byte, fixedHeader *MqttFixedHeader) (r
 }
 
 func (cmd *MqttPubackCommand) Buffer(buf *bytes.Buffer) error {
-    cmd.fixedHeader.remainLength = 2
+    cmd.fixedHeader.SetRemainLength(2)
 
     err := cmd.fixedHeader.Buffer(buf)
     if err != nil {

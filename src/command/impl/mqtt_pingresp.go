@@ -1,12 +1,15 @@
-package mqtt
+package impl
 
 import (
     "bytes"
+    
+    . "command"
+    . "client"
 )
 
 func NewMqttPingRespCommand() *MqttPingRespCommand {
     return &MqttPingRespCommand{
-        fixedHeader : MqttFixedHeader{0xd0, 0x00},
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_PINGRESP<<4, 0),
     }
 }
 
@@ -14,7 +17,7 @@ type MqttPingRespCommand struct {
     fixedHeader MqttFixedHeader
 }
 
-func (cmd *MqttPingRespCommand) Process(c *Client) error {
+func (cmd *MqttPingRespCommand) Process(c Client) error {
     return nil
 }
 

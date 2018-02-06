@@ -1,9 +1,15 @@
-package mqtt
+package impl
 
 import (
-    "fmt"
+    "log"
     "encoding/binary"
     "bytes"
+    "errors"
+    
+    "persistence"
+    . "command"
+    . "subinfo"
+    . "client"
 )
 
 type MqttPublishCommand struct {
@@ -23,7 +29,7 @@ type MqttPublishPayload struct {
 
 func NewMqttPublishCommand() *MqttPublishCommand {
     return &MqttPublishCommand{
-        fixedHeader : MqttFixedHeader{MQTT_CMD_PUBLISH<<4, 0x00}, 
+        fixedHeader : NewMqttFixedHeader(MQTT_CMD_PUBLISH<<4, 0x00), 
         variableHeader : MqttPublishVariableHeader{"", 0},
         payload : MqttPublishPayload{nil},
     }
@@ -49,10 +55,36 @@ func (vh *MqttPublishVariableHeader) SetPacketId(packetId int) {
     vh.packetId = packetId
 }
 
-func (cmd *MqttPublishCommand) Process(c *Client) error {
-    fmt.Println("Process MQTT publish command: topic[", cmd.variableHeader.topic, "] qos[", cmd.fixedHeader.FlagQos(), "]")
+func (cmd *MqttPublishCommand) Process(c Client) error {
+    log.Print("Process MQTT publish command: topic[", cmd.variableHeader.topic, "] qos[", cmd.fixedHeader.FlagQos(), "]")
     
-    var clients []SubscribePair = SubscribeInfoSingleton().getSubscribedClients(cmd.variableHeader.topic)
+    var msgId int64 = -1
+    //save message into db
+    if cmd.fixedHeader.FlagQos() > 0 {
+        //only save Qos>0 message
+        var err error
+        msgId, err = persistence.SaveMessage(c.ClientId(), cmd.variableHeader.topic, cmd.payload.msg, cmd.variableHeader.packetId)
+        if err != nil {
+            log.Print("MqttPublishCommand save message failed:", err)
+            return err
+        }
+    }
+    
+    switch cmd.Qos() {
+    case 0, 1:
+        return cmd.sendPublishMessageQos0or1(c, msgId)
+    case 2:
+        //send MQTT PubRec command
+        pubRecCmd := NewMqttPubRecCommand()
+        pubRecCmd.SetPacketId(cmd.variableHeader.packetId)
+        return c.SendCommand(pubRecCmd)
+    default:
+        return errors.New("Wrong Qos")
+    }
+}
+
+func (cmd *MqttPublishCommand) sendPublishMessageQos0or1(c Client, msgId int64) error {
+    var clients []SubscribePair = SubscribeInfoSingleton().GetSubscribedClients(cmd.variableHeader.topic)
     if clients == nil {
         return cmd.sendPubAck(c)
     }
@@ -60,27 +92,38 @@ func (cmd *MqttPublishCommand) Process(c *Client) error {
     flag := false
     for _, client := range clients {
         //check qos
-        qos := client.qos
+        qos := client.Qos
         if qos > cmd.fixedHeader.FlagQos() {
             qos = cmd.fixedHeader.FlagQos()
         }
         
         publishCmd := NewMqttPublishCommand()
-        publishCmd.fixedHeader.SetFlagDup(false) //TODO: need to check
+        publishCmd.fixedHeader.SetFlagDup(false)
         publishCmd.fixedHeader.SetFlagQos(qos)
         publishCmd.fixedHeader.SetFlagRetain(false)
         
         publishCmd.variableHeader.SetTopic(cmd.variableHeader.topic)
-        publishCmd.variableHeader.SetPacketId(cmd.variableHeader.packetId)
+        packetId := client.C.NextPacketId()
+        publishCmd.variableHeader.SetPacketId(int(packetId))
         
         publishCmd.payload.msg = cmd.payload.msg
         
-        if client.c == c {
+        if qos > 0 && !client.C.CleanSession() {
+            //save output message list
+            err := persistence.SaveClientMessage(client.C.ClientId(), msgId, qos)
+            if err != nil {
+                log.Print("MqttPublishCommand save message list failed:", err)
+                return err
+            }
+            client.C.SavePacketIdMapping(packetId, msgId)
+        }
+        
+        if client.C == c {
             //the client sent Publish command still subscribe that topic, should send Puback command first
             cmd.sendPubAck(c)
             flag = true
         }
-        client.c.SendCommand(publishCmd)
+        client.C.SendCommand(publishCmd)
     }
     
     if !flag {
@@ -90,7 +133,7 @@ func (cmd *MqttPublishCommand) Process(c *Client) error {
     return nil
 }
 
-func (cmd *MqttPublishCommand) sendPubAck(c *Client) error {
+func (cmd *MqttPublishCommand) sendPubAck(c Client) error {
     var err error
     if cmd.fixedHeader.FlagQos() > 0 {
         ackCmd := NewMqttPubackCommand()
@@ -129,7 +172,7 @@ func (cmd *MqttPublishCommand) Buffer(buf *bytes.Buffer) error {
         remainLength += 2 //packet id
     }
     remainLength += len(cmd.payload.msg)
-    cmd.fixedHeader.remainLength = remainLength
+    cmd.fixedHeader.SetRemainLength(remainLength)
 
     err := cmd.fixedHeader.Buffer(buf)
     if err != nil {

@@ -1,11 +1,13 @@
-package mqtt
+package subinfo
 
 import (
     "sync"
-    "fmt"
+    "log"
     "container/list"
     "reflect"
-    . "mqtttype"
+    
+    . "command"
+    . "client"
 )
 
 var info *subscribeInfo
@@ -20,8 +22,8 @@ func SubscribeInfoSingleton() *subscribeInfo {
 }
 
 type SubscribePair struct {
-    c *Client
-    qos int
+    C Client
+    Qos int
 }
 
 type subscribeInfo struct {
@@ -29,45 +31,45 @@ type subscribeInfo struct {
     subscribeMap map[string]*list.List
 }
 
-func (m *subscribeInfo) saveNewSubscribe(c *Client, info []*MqttSubscribePacket) {
+func (m *subscribeInfo) SaveNewSubscribe(c Client, info []*MqttSubscribePacket) {
     m.mutex.Lock()
     defer m.mutex.Unlock()
     for _, value := range info {
+        log.Print("saveNewSubscribe process Topic[", value.Topic, "] Qos[", value.Qos, "]")
         if pairs, ok := m.subscribeMap[value.Topic]; ok {
             var flag bool = false
             
             LOOP:
             for e := pairs.Front(); e != nil; e = e.Next() {
-                fmt.Println("iterator subscribe info")
                 switch v := e.Value.(type) {
                 case *SubscribePair:
-                    fmt.Println("iterator subscribe info client[", v.c, "]")
-                    if v.c.ClientId() == c.ClientId() {
-                        fmt.Println("Modify subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
+                    log.Print("iterator subscribe info client[", v.C, "]")
+                    if v.C.ClientId() == c.ClientId() {
+                        log.Print("Modify subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
                         //exist subscribe info, just modify it
-                        v.qos = value.Qos
+                        v.Qos = value.Qos
                         flag = true
                         break LOOP
                     }
                 default:
-                    fmt.Println("Wrong type:", reflect.TypeOf(e.Value))
+                    log.Print("Wrong type:", reflect.TypeOf(e.Value))
                 }
             }
             
             if !flag {
                 //add new subscribe info here
                 m.subscribeMap[value.Topic].PushBack(&SubscribePair{c, value.Qos})
-                fmt.Println("Save subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
+                log.Print("Save subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
             }
         } else {
             m.subscribeMap[value.Topic] = list.New()
             m.subscribeMap[value.Topic].PushBack(&SubscribePair{c, value.Qos})
-            fmt.Println("Save subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
+            log.Print("Save subscribe client[", c.ClientId(), "] topic[", value.Topic, "] qos[", value.Qos, "]")
         }
     }
 }
 
-func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
+func (m *subscribeInfo) GetSubscribedClients(topic string) []SubscribePair {
     m.mutex.Lock()
     defer m.mutex.Unlock()
     index := 0
@@ -75,6 +77,7 @@ func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
     
     if l == nil {
         //there is no client subscribed that topic
+        log.Print("getSubscribedClients there is no client subscribe topic[", topic, "]")
         return nil
     }
     
@@ -84,41 +87,39 @@ func (m *subscribeInfo) getSubscribedClients(topic string) []SubscribePair {
         case *SubscribePair:
             pairs[index] = *v
         default:
-            fmt.Println("Wrong SubscribePair type:", e.Value)
+            log.Print("Wrong SubscribePair type:", e.Value)
         }
         index++
 	}
     return pairs
 }
 
-func (m *subscribeInfo) removeSubscribe(c *Client, info []*MqttSubscribePacket) {
+func (m *subscribeInfo) RemoveSubscribe(c Client, topics []string) {
     m.mutex.Lock()
     defer m.mutex.Unlock()
-    for _, value := range info {
-        if pairs, ok := m.subscribeMap[value.Topic]; ok {
+    for _, topic := range topics {
+        if pairs, ok := m.subscribeMap[topic]; ok {
             var flag bool = false
             for e := pairs.Front(); e != nil; e = e.Next() {
                 pair, typeOk := e.Value.(SubscribePair)
                 if !typeOk {
-                    fmt.Println("Wrong SubscribePair type:", e.Value)
+                    log.Print("Wrong SubscribePair type:", e.Value)
                     continue
                 }
 
-                if pair.c == c {
-                    if value.Qos >= pair.qos {
-                        //remove subscribe info
-                        pairs.Remove(e)
-                    }
+                if pair.C == c {
+                    //remove subscribe info
+                    pairs.Remove(e)
                     flag = true
                     break
                 }
             }
             
             if !flag {
-                fmt.Println("Client[", c.ClientId(), "] don't subscribe topic[", value.Topic, "]")
+                log.Print("Client[", c.ClientId(), "] don't subscribe topic[", topic, "]")
             }
         } else {
-            fmt.Println("Client[", c.ClientId(), "] don't subscribe topic[", value.Topic, "]")
+            log.Print("Client[", c.ClientId(), "] don't subscribe topic[", topic, "]")
         }
     }
 }

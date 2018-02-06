@@ -1,7 +1,8 @@
-package mqtt
+package command
 
 import (
     "fmt"
+    "log"
     "bytes"
 )
 
@@ -23,16 +24,18 @@ const (
     MQTT_CMD_DISCONNECT
 )
 
-type MqttCommand interface {
-    //GetFixedHeader() MqttFixedHeader
-    Process(c *Client) error
-    Parse(buf []byte, fixedHeader *MqttFixedHeader) (restBuf []byte, err error)
-    Buffer(buf *bytes.Buffer) error
-}
-
 type MqttFixedHeader struct {
     flag byte
     remainLength int
+}
+
+type MqttSubscribePacket struct {
+    Topic string
+    Qos int
+}
+
+func NewMqttFixedHeader(flag byte, length int) MqttFixedHeader {
+    return MqttFixedHeader{flag, length}
 }
 
 func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error) {
@@ -71,8 +74,12 @@ func (fixedHeader *MqttFixedHeader) Parse(buf []byte) (restBuf []byte, err error
     fixedHeader.remainLength = value
     
     restBuf = buf[index:]
-    fmt.Println("Type:", fixedHeader.PacketType(), ", remainlength:", fixedHeader.RemainLength(), ", index:", index)
+    log.Print("Type:", fixedHeader.PacketType(), ", remainlength:", fixedHeader.RemainLength(), ", index:", index)
     return
+}
+
+func (fixedHeader *MqttFixedHeader) SetFlag(flag byte) {
+    fixedHeader.flag = flag
 }
 
 func (fixedHeader *MqttFixedHeader) PacketType() int {
@@ -124,6 +131,10 @@ func (fixedHeader *MqttFixedHeader) SetFlagRetain(retain bool) {
 
 func (fixedHeader *MqttFixedHeader) RemainLength() int {
     return fixedHeader.remainLength
+}
+
+func (fixedHeader *MqttFixedHeader) SetRemainLength(length int) {
+    fixedHeader.remainLength = length
 }
 
 func (fixedHeader *MqttFixedHeader) Buffer(buf *bytes.Buffer) error {
